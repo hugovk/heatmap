@@ -23,6 +23,7 @@ import sys
 import logging
 import math
 from PIL import Image
+from PIL import PngImagePlugin
 from PIL import ImageColor
 from itertools import chain
 import tempfile
@@ -181,15 +182,15 @@ class Projection(object):
         SCALE_FACTOR = 1000000.0
         self.pixels_per_degree = SCALE_FACTOR
         extent_out = extent_in.map(self.project)
-        padding *= 2  # padding-per-edge -> padding-in-each-dimension
+        # padding *= 2  # padding-per-edge -> padding-in-each-dimension
         try:
             if height:
                 self.pixels_per_degree = pixels_per_lat = (
-                    float(height - padding) /
+                    float(height - padding[1] * 2) /
                     extent_out.size().y * SCALE_FACTOR)
             if width:
                 self.pixels_per_degree = (
-                    float(width - padding) /
+                    float(width - padding[0] * 2) /
                     extent_out.size().x * SCALE_FACTOR)
                 if height:
                     self.pixels_per_degree = min(self.pixels_per_degree,
@@ -277,10 +278,10 @@ class Extent():
                                   self.max.y - self.min.y)
 
     def grow(self, pad):
-        self.min.x -= pad
-        self.min.y -= pad
-        self.max.x += pad
-        self.max.y += pad
+        self.min.x -= pad[0]
+        self.min.y -= pad[1]
+        self.max.x += pad[0]
+        self.max.y += pad[1]
 
     def resize(self, width=None, height=None):
         if width:
@@ -732,10 +733,10 @@ def choose_osm_zoom(config, padding):
     bbox_crazy_xy = config.extent_in.map(proj.project)
     if config.width:
         size_ratio = width_ratio = (
-            float(bbox_crazy_xy.size().x) / (config.width - 2 * padding))
+            float(bbox_crazy_xy.size().x) / (config.width - 2 * padding[0]))
     if config.height:
         size_ratio = (
-            float(bbox_crazy_xy.size().y) / (config.height - 2 * padding))
+            float(bbox_crazy_xy.size().y) / (config.height - 2 * padding[1]))
         if config.width:
             size_ratio = max(size_ratio, width_ratio)
     # TODO: We use --height and --width as upper bounds, choosing a zoom
@@ -755,6 +756,10 @@ def get_osm_background(config, padding):
     proj.pixels_per_degree = _scale_for_osm_zoom(zoom)
     bbox_xy = config.extent_in.map(proj.project)
     # We're not checking that the padding fits within the specified size.
+    if config.width:
+        padding[0] = (config.width - bbox_xy.size().x) / 2
+    if config.height:
+        padding[1] = (config.height - bbox_xy.size().y) / 2
     bbox_xy.grow(padding)
     bbox_ll = bbox_xy.map(proj.inverse_project)
     image, img_bbox_ll = _get_osm_image(bbox_ll, zoom, config.osm_base)
@@ -767,8 +772,8 @@ def get_osm_background(config, padding):
     image = image.crop((
         int(offset.x),
         int(offset.y),
-        int(offset.x + bbox_xy.size().x + 1),
-        int(offset.y + bbox_xy.size().y + 1)))
+        int(offset.x + bbox_xy.size().x),
+        int(offset.y + bbox_xy.size().y)))
     config.background_image = image
     config.extent_in = bbox_ll
     config.projection = proj
@@ -1196,7 +1201,8 @@ class Configuration(object):
         if not self.shapes:
             raise ValueError('no input specified')
 
-        padding = self.margin + self.kernel.radius
+        padding = [self.margin + self.kernel.radius] * 2  # [x, y]. Can be changed if osm set
+
         if not self.extent_in:
             logging.debug('reading input data')
             self.shapes = list(self.shapes)
@@ -1204,7 +1210,7 @@ class Configuration(object):
             self.extent_in = Extent(shapes=self.shapes)
 
         if self.osm:
-            get_osm_background(self, padding)
+            get_osm_background(self, padding)  # padding can be changed inside
         else:
             if not self.projection.is_scaled():
                 self.projection.auto_set_scale(self.extent_in, padding,

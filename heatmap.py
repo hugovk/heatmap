@@ -739,6 +739,10 @@ def choose_osm_zoom(config, padding):
             float(bbox_crazy_xy.size().y) / (config.height - 2 * padding[1]))
         if config.width:
             size_ratio = max(size_ratio, width_ratio)
+            
+    size_ratio = max(size_ratio, 4000)  # 4000 is a value to reach total 18 zoom level
+    # in case if input has only one point(fix ValueError on math.log(0,2) )
+
     # TODO: We use --height and --width as upper bounds, choosing a zoom
     # level that lets our image be no larger than the specified size.
     # It might be desirable to use them as lower bounds or to get as close
